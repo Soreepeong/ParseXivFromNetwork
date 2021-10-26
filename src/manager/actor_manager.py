@@ -1,14 +1,14 @@
-import ctypes
 import dataclasses
 import datetime
-import typing
 
-from pyxivdata.common import AlmostStructureBase
-from pyxivdata.network.ipc_opcodes import GameIpcOpcodes
-from pyxivdata.network.ipc_structure import GameIpcDataIpcUpdateHpMpTp, GameIpcDataIpcSpawn, GameIpcDataIpcModelEquip, \
-    GameIpcDataIpcPlayerStats, GameIpcDataIpcActorControl, GameIpcDataIpcEffectResult, GameIpcDataIpcStatusEffectList, \
-    GameIpcDataCommonEffectType, GameIpcDataCommonStatusEffectEntryModificationInfo, GameIpcDataCommonStatusEffect
-from pyxivdata.network.packet_structure import GameMessageHeader, GameIpcMessageHeader, GameMessageBundleHeader
+from manager.stubs import IpcFeedTarget
+from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
+from pyxivdata.network.packet import IpcMessageHeader, PacketHeader
+from pyxivdata.network.server_ipc import *
+from pyxivdata.network.server_ipc.actor_control import ActorControlClassJobChange, ActorControlEffectOverTime
+from pyxivdata.network.server_ipc.common import StatusEffectEntryModificationInfo, StatusEffect
+from pyxivdata.network.enums import EffectType
+from pyxivdata.network.server_ipc.opcodes import ServerIpcOpcodes
 
 
 @dataclasses.dataclass
@@ -23,6 +23,10 @@ class ActorStatusEffect:
 class Actor:
     id: int
     last_updated_timestamp: typing.Optional[datetime.datetime] = None
+    x: typing.Optional[float] = None
+    y: typing.Optional[float] = None
+    z: typing.Optional[float] = None
+    rotation: typing.Optional[float] = None
     hp: typing.Optional[int] = None
     max_hp: typing.Optional[int] = None
     mp: typing.Optional[int] = None
@@ -30,7 +34,7 @@ class Actor:
     owner_id: typing.Optional[int] = None
     name: typing.Optional[str] = None
     bnpcname_id: typing.Optional[int] = None
-    job: typing.Optional[int] = None
+    class_or_job: typing.Optional[int] = None
     level: typing.Optional[int] = None
     synced_level: typing.Optional[int] = None
     shield_ratio: typing.Optional[float] = None
@@ -39,7 +43,7 @@ class Actor:
     def update_status_effects_from_list(
             self,
             timestamp: datetime.datetime,
-            effects: typing.Sequence[GameIpcDataCommonStatusEffect],
+            effects: typing.Sequence[StatusEffect],
     ):
         for i, effect in enumerate(effects):
             while len(self.status_effects) <= i:
@@ -56,7 +60,7 @@ class Actor:
     def update_status_effects_from_modification_info(
             self,
             timestamp: datetime.datetime,
-            updates: typing.Sequence[GameIpcDataCommonStatusEffectEntryModificationInfo],
+            updates: typing.Sequence[StatusEffectEntryModificationInfo],
     ):
         for effect in updates:
             while len(self.status_effects) <= effect.index:
@@ -72,111 +76,107 @@ class Actor:
 
 
 # noinspection DuplicatedCode
-class ActorManager:
-    def __init__(self, opcodes: GameIpcOpcodes):
+class ActorManager(IpcFeedTarget):
+    def __init__(self, server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes):
+        super().__init__(server_opcodes, client_opcodes)
         self.__actors: typing.Dict[int, Actor] = {}
-        self.__type2_map = {
-            opcodes.UpdateHpMpTp: (self._on_update_hp_mp_tp, GameIpcDataIpcUpdateHpMpTp),
-            opcodes.NpcSpawn: (self._on_spawn, GameIpcDataIpcSpawn),
-            opcodes.PlayerSpawn: (self._on_spawn, GameIpcDataIpcSpawn),
-            opcodes.ModelEquip: (self._on_model_equip, GameIpcDataIpcModelEquip),
-            opcodes.PlayerStats: (self._on_player_stats, GameIpcDataIpcPlayerStats),
-            opcodes.ActorControl: (self._on_actor_control, GameIpcDataIpcActorControl),
-            opcodes.ActorControlSelf: (self._on_actor_control, GameIpcDataIpcActorControl),
-            opcodes.ActorControlTarget: (self._on_actor_control, GameIpcDataIpcActorControl),
-            opcodes.EffectResult: (self._on_effect_result, GameIpcDataIpcEffectResult),
-            opcodes.StatusEffectList: (),
-            opcodes.StatusEffectList2: (),
-            opcodes.StatusEffectListBoss: (),
-        }
+
+        @self._server_opcode_handler(server_opcodes.ActorStats)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcActorStats):
+            actor = self[header.actor_id]
+            actor.last_updated_timestamp = bundle_header.timestamp
+            actor.hp = data.hp
+            actor.mp = data.mp
+
+        @self._server_opcode_handler(server_opcodes.ActorSpawn, server_opcodes.ActorSpawnNpc,
+                                     server_opcodes.ActorSpawnNpc2)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader,
+              data: typing.Union[IpcActorSpawn, IpcActorSpawnNpc]):
+            actor = self[header.actor_id]
+            actor.last_updated_timestamp = bundle_header.timestamp
+            actor.name = data.name
+            actor.owner_id = data.owner_id
+            actor.bnpcname_id = data.bnpc_name
+            actor.level = data.level
+            actor.class_or_job = data.class_or_job
+            actor.max_hp = data.max_hp
+            actor.max_mp = data.max_mp
+            actor.hp = data.hp
+            actor.mp = data.mp
+            actor.update_status_effects_from_list(bundle_header.timestamp, data.status_effects)
+            actor.x = data.position_vector.x
+            actor.y = data.position_vector.y
+            actor.z = data.position_vector.z
+            actor.rotation = data.rotation
+
+        @self._server_opcode_handler(server_opcodes.ActorDespawn)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcActorDespawn):
+            print(f"Despawn: current={self.__actors[header.actor_id]} actor={data.actor_id} spawn={data.spawn_id}")
+            pass  # TODO
+
+        @self._server_opcode_handler(server_opcodes.ActorSetPos, server_opcodes.ActorMove)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: typing.Union[IpcActorSetPos, IpcActorMove]):
+            actor = self[header.actor_id]
+            actor.last_updated_timestamp = bundle_header.timestamp
+            actor.x = data.position_vector.x
+            actor.y = data.position_vector.y
+            actor.z = data.position_vector.z
+            actor.rotation = data.rotation
+
+        @self._server_opcode_handler(server_opcodes.ActorModelEquip)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcActorModelEquip):
+            actor = self[header.actor_id]
+            actor.last_updated_timestamp = bundle_header.timestamp
+            actor.class_or_job = data.class_or_job
+            actor.level = data.level
+
+        @self._server_opcode_handler(server_opcodes.PlayerParams)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcPlayerParams):
+            actor = self[header.actor_id]
+            actor.last_updated_timestamp = bundle_header.timestamp
+            actor.max_hp = data.max_hp
+            actor.max_mp = data.max_mp
+
+        @self._server_opcode_handler(server_opcodes.EffectResult)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcEffectResult):
+            actor = self[header.actor_id]
+            actor.last_updated_timestamp = bundle_header.timestamp
+            actor.hp = data.hp
+            actor.max_hp = data.max_hp
+            actor.mp = data.mp
+            actor.shield_ratio = data.shield_percentage / 100.
+            actor.update_status_effects_from_modification_info(bundle_header.timestamp, data.entries[:data.entry_count])
+
+        @self._server_opcode_handler(server_opcodes.ActorStatusEffectList, server_opcodes.ActorStatusEffectList2,
+                                     server_opcodes.ActorStatusEffectListBoss)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcActorStatusEffectList):
+            actor = self[header.actor_id]
+            actor.last_updated_timestamp = bundle_header.timestamp
+            actor.level = data.level
+            actor.class_or_job = data.class_or_job
+            actor.max_hp = data.max_hp
+            actor.max_mp = data.max_mp
+            actor.hp = data.hp
+            actor.mp = data.mp
+            actor.shield_ratio = data.shield_percentage / 100.
+            actor.update_status_effects_from_list(bundle_header.timestamp, data.effects)
+
+        @self._actor_control_handler
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: ActorControlClassJobChange):
+            actor = self[header.actor_id]
+            actor.last_updated_timestamp = bundle_header.timestamp
+            actor.class_or_job = data.class_or_job
+
+        @self._actor_control_handler
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: ActorControlEffectOverTime):
+            actor = self[header.actor_id]
+            actor.last_updated_timestamp = bundle_header.timestamp
+            if data.effect_type == EffectType.Damage:
+                actor.hp = max(0, min(actor.max_hp, actor.hp - data.amount))
+            elif data.effect_type == EffectType.Heal:
+                actor.hp = max(0, min(actor.max_hp, actor.hp + data.amount))
 
     def __getitem__(self, actor_id: int) -> Actor:
         if actor_id not in self.__actors:
             self.__actors[actor_id] = Actor(actor_id)
         return self.__actors[actor_id]
-
-    def feed(self, bundle_header: GameMessageBundleHeader, data: bytearray):
-        if GameMessageHeader.from_buffer(data).type != GameMessageHeader.TYPE_IPC:
-            return
-
-        header = GameIpcMessageHeader.from_buffer(data)
-        if header.type1 != GameIpcMessageHeader.TYPE1_IPC:
-            return
-
-        if header.type2 not in self.__type2_map:
-            return
-
-        data_type: typing.Type[AlmostStructureBase]
-        cb, data_type = self.__type2_map.get(header.type2)
-        cb(bundle_header, header, data_type.from_buffer(data[ctypes.sizeof(header):header.size]))
-
-    def _on_update_hp_mp_tp(self, bundle_header: GameMessageBundleHeader, header: GameIpcMessageHeader,
-                            data: GameIpcDataIpcUpdateHpMpTp):
-        actor = self[header.actor_id]
-        actor.last_updated_timestamp = bundle_header.timestamp
-        actor.hp = data.hp
-        actor.mp = data.mp
-
-    def _on_spawn(self, bundle_header: GameMessageBundleHeader, header: GameIpcMessageHeader,
-                  data: GameIpcDataIpcSpawn):
-        actor = self[header.actor_id]
-        actor.last_updated_timestamp = bundle_header.timestamp
-        actor.name = data.name
-        actor.owner_id = data.owner_id
-        actor.bnpcname_id = data.bnpcname_id
-        actor.level = data.level
-        actor.job = data.job
-        actor.max_hp = data.max_hp
-        actor.max_mp = data.max_mp
-        actor.hp = data.hp
-        actor.mp = data.mp
-        actor.update_status_effects_from_list(bundle_header.timestamp, data.status_effects)
-
-    def _on_model_equip(self, bundle_header: GameMessageBundleHeader, header: GameIpcMessageHeader,
-                        data: GameIpcDataIpcModelEquip):
-        actor = self[header.actor_id]
-        actor.last_updated_timestamp = bundle_header.timestamp
-        actor.job = data.job
-        actor.level = data.level
-
-    def _on_player_stats(self, bundle_header: GameMessageBundleHeader, header: GameIpcMessageHeader,
-                         data: GameIpcDataIpcSpawn):
-        actor = self[header.actor_id]
-        actor.last_updated_timestamp = bundle_header.timestamp
-        actor.max_hp = data.max_hp
-        actor.max_mp = data.max_mp
-
-    def _on_actor_control(self, bundle_header: GameMessageBundleHeader, header: GameIpcMessageHeader,
-                          data: GameIpcDataIpcActorControl):
-        actor = self[header.actor_id]
-        actor.last_updated_timestamp = bundle_header.timestamp
-        if data.category == GameIpcDataIpcActorControl.CATEGORY_EFFECT_OVER_TIME:
-            effect_type = GameIpcDataCommonEffectType(data.param2)
-            amount = data.param3
-            if effect_type == GameIpcDataCommonEffectType.Damage:
-                actor.hp = max(0, min(actor.max_hp, actor.hp - amount))
-            elif effect_type == GameIpcDataCommonEffectType.Heal:
-                actor.hp = max(0, min(actor.max_hp, actor.hp + amount))
-
-    def _on_effect_result(self, bundle_header: GameMessageBundleHeader, header: GameIpcMessageHeader,
-                          data: GameIpcDataIpcEffectResult):
-        actor = self[header.actor_id]
-        actor.last_updated_timestamp = bundle_header.timestamp
-        actor.hp = data.hp
-        actor.max_hp = data.max_hp
-        actor.mp = data.mp
-        actor.shield_ratio = data.shield_percentage / 100.
-        actor.update_status_effects_from_modification_info(bundle_header.timestamp, data.entries)
-
-    def _on_status_effect_list(self, bundle_header: GameMessageBundleHeader, header: GameIpcMessageHeader,
-                               data: GameIpcDataIpcStatusEffectList):
-        actor = self[header.actor_id]
-        actor.last_updated_timestamp = bundle_header.timestamp
-        actor.level = data.level
-        actor.job = data.job
-        actor.max_hp = data.max_hp
-        actor.max_mp = data.max_mp
-        actor.hp = data.hp
-        actor.mp = data.mp
-        actor.shield_ratio = data.shield_percentage / 100.
-        actor.update_status_effects_from_list(bundle_header.timestamp, data.status_effects)

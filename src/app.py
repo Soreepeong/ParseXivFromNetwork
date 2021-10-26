@@ -1,17 +1,21 @@
 import datetime
 
+from manager.actor_manager import ActorManager
+from manager.chat_manager import ChatManager
+from manager.effect_manager import EffectManager
+from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
+from pyxivdata.network.server_ipc import ServerIpcOpcodes
+
 
 def __main__():
-    parser = DpsParser
-    p = r"C:\Users\SP\AppData\Roaming\XivAlexander\Dump\Dump_20211023_111519_579_238.log"
-    with open(p) as fp:
-        for line in fp:
-            ts = datetime.datetime(int(line[0:4], 10), int(line[5:7], 10), int(line[8:10], 10),
-                                   int(line[11:13], 10), int(line[14:16], 10), int(line[17:19], 10),
-                                   int(line[20:23], 10) * 1000)
-            is_recv = line[24] == '>'
-            data = bytearray.fromhex(line[25:])
-            parser.feed(ts, is_recv, data)
+    server_opcodes = ServerIpcOpcodes()
+    client_opcodes = ClientIpcOpcodes()
+    actor_manager = ActorManager(server_opcodes, client_opcodes)
+    effect_manager = EffectManager(server_opcodes, client_opcodes, actor_manager)
+    chat_manager = ChatManager(server_opcodes, client_opcodes, actor_manager)
+
+    # TODO: use pip "pyshark" to test from wireshark capture file
+
     return 0
 
 
