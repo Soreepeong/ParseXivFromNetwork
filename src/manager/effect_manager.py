@@ -32,13 +32,13 @@ class EffectManager(IpcFeedTarget):
                 timestamp=bundle_header.timestamp,
                 source_actor=self._actors[header.actor_id],
                 effect=data,
-                effects_per_target=data.valid_effects_per_target,
+                effects_per_target=data.valid_known_effects_per_target,
             )
 
         @self._server_opcode_handler(server_opcodes.EffectResult)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcEffectResult):
             try:
-                pending_effect = self._pending_effects.get(data.global_sequence_id)
+                pending_effect = self._pending_effects[data.global_sequence_id]
                 effects = pending_effect.effects_per_target.pop(header.actor_id)
                 if not pending_effect.effects_per_target:
                     del self._pending_effects[data.global_sequence_id]
@@ -46,10 +46,10 @@ class EffectManager(IpcFeedTarget):
                 # TODO: log
                 return
 
-            source_actor = self._actors[header.actor_id]
+            source_actor = pending_effect.source_actor
             timestamp = bundle_header.timestamp
             for effect in effects:
-                target_actor = source_actor if effect.effect_on_source else pending_effect.source_actor
+                target_actor = source_actor if effect.effect_on_source else self._actors[header.actor_id]
 
                 self._on_effect(timestamp, source_actor, target_actor, pending_effect.effect, effect)
 
@@ -69,38 +69,52 @@ class EffectManager(IpcFeedTarget):
 
     def _on_effect(self, timestamp: datetime.datetime, source: Actor, target: Actor,
                    pending_effect: IpcEffectStub, effect: ActionEffect):
+        if effect.known_effect_type not in (EffectType.Damage, EffectType.Heal):
+            return
+
         d = [
             f"{timestamp:%Y-%m-%d %H:%M:%S.%f}",
-            f"{source:<32}",
-            f"{target:<32}",
+            f"{source.name or source.id}",
         ]
-        if effect.effect_type == EffectType.Damage:
-            d.append("-")
-        elif effect.effect_type == EffectType.Heal:
-            d.append("+")
-        else:
-            return
+        if source.owner_id != 0xE0000000:
+            d.append(f"@{self._actors[source.owner_id].name or source.owner_id}")
+
         d.extend([
-            f"{effect.value:>7}"
+            "=>",
+            f"{target.name or target.id}",
+        ])
+        if target.owner_id != 0xE0000000:
+            d.append(f"@{self._actors[target.owner_id].name or target.owner_id}")
+
+        d.extend([
+            f"{effect.value * (-1 if effect.known_effect_type == EffectType.Damage else 1):>+7}",
             f"{pending_effect.action_id:>5}",
         ])
         print(*d)
         pass  # TODO
 
     def _on_effect_over_time(self, timestamp: datetime.datetime, target: Actor,
-                             buff_id: int, effect_type: EffectType, amount: int, source: typing.Optional[Actor]):
+                             buff_id: int, effect_type: int, amount: int, source: typing.Optional[Actor]):
+        if effect_type not in (EffectType.Damage, EffectType.Heal):
+            return
+
         d = [
             f"{timestamp:%Y-%m-%d %H:%M:%S.%f}",
-            f"{'?' if source is None else source:<32}",
-            f"{target:<32}",
         ]
-        if effect_type == EffectType.Damage:
-            d.append("-")
-        elif effect_type == EffectType.Heal:
-            d.append("+")
-        else:
-            return
-        d.append(f"{amount:>7}")
+
+        if source is not None:
+            d.append(f"{source.name or source.id}")
+            if source.owner_id != 0xE0000000:
+                d.append(f"@{self._actors[source.owner_id].name or source.owner_id}")
+
+        d.extend([
+            "=>",
+            f"{target.name or target.id}",
+        ])
+        if target.owner_id != 0xE0000000:
+            d.append(f"@{self._actors[target.owner_id].name or target.owner_id}")
+
+        d.append(f"{amount * (-1 if effect_type == EffectType.Damage else 1):>+7}")
         if buff_id:
             d.append(f"{buff_id:>5}(*)")
         else:

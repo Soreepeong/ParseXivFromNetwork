@@ -35,8 +35,8 @@ def _feed(bundle_header: PacketHeader, data: bytearray, type2_map: TYPE2_MAP_TYP
         return
 
     data_type: SupportedIpcDataTypes
-    cb, data_type = type2_map.get(header.type2)
-    cb(bundle_header, header, data_type.from_buffer(data[ctypes.sizeof(header):header.size]))
+    for cb, data_type in type2_map.get(header.type2):
+        cb(bundle_header, header, data_type.from_buffer(data[ctypes.sizeof(header):header.size]))
 
 
 class IpcFeedTarget:
@@ -66,12 +66,12 @@ class IpcFeedTarget:
         @self._server_opcode_handler(server_opcodes.ActorControlSelf)
         @self._server_opcode_handler(server_opcodes.ActorControlTarget)
         def _(bundle_header: PacketHeader, header: MessageHeader, data: IpcActorControlStub):
-            if data.type not in self.__actor_control_map:
+            if data.known_type not in self.__actor_control_map:
                 return
 
             data_type: typing.Type[ActorControlBase]
-            cb, data_type = self.__actor_control_map.get(data.type)
-            cb(bundle_header, header, data_type(data[ctypes.sizeof(header):header.size]))
+            for cb, data_type in self.__actor_control_map.get(data.known_type):
+                cb(bundle_header, header, data_type(data))
 
     def feed_from_server(self, bundle_header: PacketHeader, data: bytearray):
         return _feed(bundle_header, data, self.__server_type2_map)
@@ -87,8 +87,10 @@ class IpcFeedTarget:
             if type_ is None:
                 type_ = list(inspect.signature(cb).parameters.values())[2]
             for opcode in opcodes:
-                type2_map = self.__server_type2_map if direction else self.__client_type2_map
-                type2_map[opcode].append((cb, self.__server_opcode_type_map[opcode]))
+                if direction:
+                    self.__server_type2_map[opcode].append((cb, self.__server_opcode_type_map[opcode]))
+                else:
+                    self.__client_type2_map[opcode].append((cb, self.__client_opcode_type_map[opcode]))
             return cb
 
         return wrapper

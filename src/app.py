@@ -1,20 +1,101 @@
-import datetime
+import ctypes
+import dataclasses
+import io
+import ipaddress
+import struct
+import typing
+
+import sys
+import zlib
 
 from manager.actor_manager import ActorManager
 from manager.chat_manager import ChatManager
 from manager.effect_manager import EffectManager
+from pyxivdata.common import GameLanguage
+from pyxivdata.installation.resource_reader import GameResourceReader
+from pyxivdata.network.client_ipc import IpcRequestChat
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
-from pyxivdata.network.server_ipc import ServerIpcOpcodes
+from pyxivdata.network.packet import PacketHeader, MessageHeader, IpcMessageHeader
+from pyxivdata.network.server_ipc import ServerIpcOpcodes, IpcAggroList, IpcInitZone, IpcPartyList, IpcAllianceList, \
+    IpcAggroRank, IpcChat, IpcChatParty, IpcChatTell
+
+
+class Parser:
+    def __init__(self):
+        server_opcodes = ServerIpcOpcodes()
+        client_opcodes = ClientIpcOpcodes()
+        self.actor_manager = ActorManager(server_opcodes, client_opcodes)
+        self.chat_manager = ChatManager(server_opcodes, client_opcodes, self.actor_manager)
+        self.effect_manager = EffectManager(server_opcodes, client_opcodes, self.actor_manager)
+
+    def feed_from_server(self, packet_header: PacketHeader, message_data: bytearray):
+        self.actor_manager.feed_from_server(packet_header, message_data)
+        self.chat_manager.feed_from_server(packet_header, message_data)
+        self.effect_manager.feed_from_server(packet_header, message_data)
+
+    def feed_from_client(self, packet_header: PacketHeader, message_data: bytearray):
+        self.actor_manager.feed_from_client(packet_header, message_data)
+        self.chat_manager.feed_from_client(packet_header, message_data)
+        self.effect_manager.feed_from_client(packet_header, message_data)
 
 
 def __main__():
-    server_opcodes = ServerIpcOpcodes()
-    client_opcodes = ClientIpcOpcodes()
-    actor_manager = ActorManager(server_opcodes, client_opcodes)
-    effect_manager = EffectManager(server_opcodes, client_opcodes, actor_manager)
-    chat_manager = ChatManager(server_opcodes, client_opcodes, actor_manager)
+    # path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211025\204.2.229.113.55027.log"
+    # path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211026\204.2.229.113.55027.log"
+    path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211026\124.150.157.26.55007.log"
+    parser = Parser()
+    fp: typing.Union[io.BytesIO]
+    with open(path, "rb") as fp, GameResourceReader(default_language=[GameLanguage.English]) as res:
+        while True:
+            hdr = fp.read(5)
+            if not hdr:
+                break
+            direction, length = struct.unpack("<cI", hdr)
+            data = bytearray(length)
+            fp.readinto(data)
 
-    # TODO: use pip "pyshark" to test from wireshark capture file
+            packet_header = PacketHeader.from_buffer(data)
+            message_buffer = data[ctypes.sizeof(packet_header):]
+            if packet_header.is_deflated:
+                try:
+                    message_buffer = bytearray(zlib.decompress(message_buffer))
+                except zlib.error as e:
+                    print(f"zlib error: {e}")
+                    continue
+            msgptr = 0
+            while msgptr < len(message_buffer):
+                message_header = MessageHeader.from_buffer(message_buffer, msgptr)
+                if message_header.type == MessageHeader.TYPE_IPC:
+                    ipc_header = IpcMessageHeader.from_buffer(message_buffer, msgptr)
+                    ipc_data = message_buffer[msgptr + ctypes.sizeof(ipc_header):msgptr + ipc_header.size]
+                    if direction == b'<':
+                        parser.feed_from_server(packet_header, message_buffer[msgptr:msgptr + message_header.size])
+
+                        if ipc_header.type2 == ServerIpcOpcodes.InitZone:
+                            r = IpcInitZone.from_buffer(ipc_data)
+                            print(res.get_territory_name(r.zone_id, fallback_format="Unknown({})"))
+                        elif ipc_header.type2 == ServerIpcOpcodes.PartyList:
+                            r = IpcPartyList.from_buffer(ipc_data)
+                            print(f"Party:", ", ".join(x.name for x in r.members[:r.party_size]))
+                        elif ipc_header.type2 == ServerIpcOpcodes.AllianceList:
+                            r = IpcAllianceList.from_buffer(ipc_data)
+                            print(f"Alliance:", ", ".join(x.name for x in r.members))
+                        elif ipc_header.type2 == ServerIpcOpcodes.AggroList:
+                            r = IpcAggroList.from_buffer(ipc_data)
+                        elif ipc_header.size == ctypes.sizeof(ipc_header) + ctypes.sizeof(IpcAggroList):
+                            r2 = IpcAggroRank.from_buffer(ipc_data)
+                            breakpoint()
+                        elif ipc_header.size == ctypes.sizeof(ipc_header) + ctypes.sizeof(IpcChat):
+                            r2 = IpcChat.from_buffer(ipc_data)
+                            breakpoint()
+                        elif ipc_header.size == ctypes.sizeof(ipc_header) + ctypes.sizeof(IpcRequestChat):
+                            r2 = IpcRequestChat.from_buffer(ipc_data)
+                            breakpoint()
+
+                    elif direction == b'>':
+                        parser.feed_from_client(packet_header, message_buffer[msgptr:msgptr + message_header.size])
+
+                msgptr += message_header.size
 
     return 0
 

@@ -1,9 +1,10 @@
 from manager.actor_manager import ActorManager
 from manager.stubs import IpcFeedTarget
-from pyxivdata.network.client_ipc import IpcRequestChat, IpcRequestTell
+from pyxivdata.network.client_ipc import IpcRequestChat, IpcRequestTell, IpcRequestChatParty
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
+from pyxivdata.network.enums import ChatType
 from pyxivdata.network.packet import PacketHeader, IpcMessageHeader
-from pyxivdata.network.server_ipc import IpcChat, IpcChatParty
+from pyxivdata.network.server_ipc import IpcChat, IpcChatParty, IpcChatTell
 from pyxivdata.network.server_ipc.opcodes import ServerIpcOpcodes
 
 
@@ -19,15 +20,25 @@ class ChatManager(IpcFeedTarget):
 
         @self._server_opcode_handler(server_opcodes.ChatParty)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcChatParty):
-            print(f"[Party] {data.name} ({self.__actors[data.character_id]} @ {data.content_id}): {data.message}")
+            print(f"[Party] {data.name}: {data.message}")
+            pass
+
+        @self._server_opcode_handler(server_opcodes.ChatTell)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcChatTell):
+            print(f"{data.name}@{data.world_id} >> {data.message}")
             pass
 
         @self._client_opcode_handler(client_opcodes.RequestChat)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcRequestChat):
-            print(f"[{data.chat_type.name}] {self.__actors[header.login_actor_id]}!: {data.message}")
+            print(f"[{data.chat_type.name}] {self.__actors[header.login_actor_id].name}!: {data.message}")
+            pass
+
+        @self._client_opcode_handler(client_opcodes.RequestChatParty)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcRequestChatParty):
+            print(f"[{ChatType.Party.name}] {self.__actors[header.login_actor_id].name}!: {data.message}")
             pass
 
         @self._client_opcode_handler(client_opcodes.RequestTell)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcRequestTell):
-            print(f">> {data.target_name}@{data.world_id}/{data.world_id_2}/{data.content_id}: {data.message}")
+            print(f">> {data.target_name}@{data.world_id}: {data.message}")
             pass

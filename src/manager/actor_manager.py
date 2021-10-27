@@ -79,7 +79,9 @@ class Actor:
 class ActorManager(IpcFeedTarget):
     def __init__(self, server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes):
         super().__init__(server_opcodes, client_opcodes)
-        self.__actors: typing.Dict[int, Actor] = {}
+        self.__actors: typing.Dict[int, Actor] = {
+            0xE0000000: Actor(id=0xE0000000, name="(root)")
+        }
 
         @self._server_opcode_handler(server_opcodes.ActorStats)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcActorStats):
@@ -134,8 +136,8 @@ class ActorManager(IpcFeedTarget):
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcPlayerParams):
             actor = self[header.actor_id]
             actor.last_updated_timestamp = bundle_header.timestamp
-            actor.max_hp = data.max_hp
-            actor.max_mp = data.max_mp
+            actor.max_hp = data.hp
+            actor.max_mp = data.mp
 
         @self._server_opcode_handler(server_opcodes.EffectResult)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcEffectResult):
