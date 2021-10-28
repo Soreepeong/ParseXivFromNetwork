@@ -1,5 +1,8 @@
+import typing
+
 from manager.actor_manager import ActorManager
 from manager.stubs import IpcFeedTarget
+from pyxivdata.escaped_string import SqEscapedString
 from pyxivdata.network.client_ipc import IpcRequestChat, IpcRequestTell, IpcRequestChatParty
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
 from pyxivdata.network.enums import ChatType
@@ -15,30 +18,45 @@ class ChatManager(IpcFeedTarget):
 
         @self._server_opcode_handler(server_opcodes.Chat)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcChat):
-            print(f"[{data.chat_type.name}] {data.name}: {data.message}")
-            pass  # TODO
+            self._on_chat(data.chat_type, data.character_id, data.name, data.world_id, data.message)
 
         @self._server_opcode_handler(server_opcodes.ChatParty)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcChatParty):
-            print(f"[Party] {data.name}: {data.message}")
-            pass
+            if data.party_id == self.__actors.party_id:
+                self._on_chat(ChatType.Party, data.character_id, data.name, data.world_id, data.message)
+            else:
+                # apparently FC chat also comes this way
+                self._on_chat(ChatType.FreeCompany, data.character_id, data.name, data.world_id, data.message)
 
         @self._server_opcode_handler(server_opcodes.ChatTell)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcChatTell):
-            print(f"{data.name}@{data.world_id} >> {data.message}")
-            pass
+            self._on_chat(ChatType.TellReceive, None, data.name, data.world_id, data.message)
 
         @self._client_opcode_handler(client_opcodes.RequestChat)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcRequestChat):
-            print(f"[{data.chat_type.name}] {self.__actors[header.login_actor_id].name}!: {data.message}")
-            pass
+            me = self.__actors[header.login_actor_id]
+            self._on_chat(data.chat_type, me.id, me.name, me.home_world_id, data.message)
 
         @self._client_opcode_handler(client_opcodes.RequestChatParty)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcRequestChatParty):
-            print(f"[{ChatType.Party.name}] {self.__actors[header.login_actor_id].name}!: {data.message}")
-            pass
+            me = self.__actors[header.login_actor_id]
+            if data.party_id == self.__actors.party_id:
+                self._on_chat(ChatType.Party, me.id, me.name, me.home_world_id, data.message)
+            else:
+                self._on_chat(ChatType.FreeCompany, me.id, me.name, me.home_world_id, data.message)
 
         @self._client_opcode_handler(client_opcodes.RequestTell)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcRequestTell):
-            print(f">> {data.target_name}@{data.world_id}: {data.message}")
-            pass
+            me = self.__actors[header.login_actor_id]
+            self._on_chat(ChatType.Tell, me.id, me.name, me.home_world_id, data.message, data.target_name,
+                          data.world_id)
+
+    def _on_chat(self, chat_type: ChatType, from_id: typing.Optional[int], from_name: str, from_world: int,
+                 message: SqEscapedString,
+                 to_name: typing.Optional[str] = None, to_world: typing.Optional[int] = None):
+        if chat_type == ChatType.Tell:
+            print(f"{from_name}@{from_world} >> {message}")
+        elif chat_type == ChatType.TellReceive:
+            print(f">> {to_name}@{to_world}: {message}")
+        else:
+            print(f"[{chat_type.name}] {from_name}@{from_world}: {message}")

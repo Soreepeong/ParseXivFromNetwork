@@ -3,6 +3,8 @@ import ctypes
 import inspect
 import typing
 
+import itertools
+
 from pyxivdata.network import server_ipc, client_ipc
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
 from pyxivdata.network.common import IpcStructure
@@ -15,12 +17,13 @@ SupportedIpcDataTypes = typing.Union[
     typing.Type[ctypes.Structure],
     typing.Type[ctypes.LittleEndianStructure],
     typing.Type[ctypes.BigEndianStructure],
+    None,
 ]
 
 IpcCallbackType = typing.Callable[[PacketHeader, IpcMessageHeader, any], typing.NoReturn]
 ActorControlCallbackType = typing.Callable[[PacketHeader, IpcMessageHeader, any], typing.NoReturn]
 
-TYPE2_MAP_TYPE = typing.Dict[int, typing.List[typing.Tuple[IpcCallbackType, SupportedIpcDataTypes]]]
+TYPE2_MAP_TYPE = typing.Dict[typing.Optional[int], typing.List[typing.Tuple[IpcCallbackType, SupportedIpcDataTypes]]]
 
 
 def _feed(bundle_header: PacketHeader, data: bytearray, type2_map: TYPE2_MAP_TYPE):
@@ -35,8 +38,11 @@ def _feed(bundle_header: PacketHeader, data: bytearray, type2_map: TYPE2_MAP_TYP
         return
 
     data_type: SupportedIpcDataTypes
-    for cb, data_type in type2_map.get(header.type2):
-        cb(bundle_header, header, data_type.from_buffer(data[ctypes.sizeof(header):header.size]))
+    for cb, data_type in itertools.chain(type2_map.get(header.type2), type2_map.get(None, ())):
+        if data_type is None:
+            cb(bundle_header, header, data[ctypes.sizeof(header):header.size])
+        else:
+            cb(bundle_header, header, data_type.from_buffer(data[ctypes.sizeof(header):header.size]))
 
 
 class IpcFeedTarget:
@@ -86,11 +92,17 @@ class IpcFeedTarget:
             nonlocal type_
             if type_ is None:
                 type_ = list(inspect.signature(cb).parameters.values())[2]
-            for opcode in opcodes:
+            if opcodes:
+                for opcode in opcodes:
+                    if direction:
+                        self.__server_type2_map[opcode].append((cb, self.__server_opcode_type_map[opcode]))
+                    else:
+                        self.__client_type2_map[opcode].append((cb, self.__client_opcode_type_map[opcode]))
+            else:
                 if direction:
-                    self.__server_type2_map[opcode].append((cb, self.__server_opcode_type_map[opcode]))
+                    self.__server_type2_map[None].append((cb, None))
                 else:
-                    self.__client_type2_map[opcode].append((cb, self.__client_opcode_type_map[opcode]))
+                    self.__client_type2_map[None].append((cb, None))
             return cb
 
         return wrapper

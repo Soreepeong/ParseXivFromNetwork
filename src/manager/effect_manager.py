@@ -90,7 +90,7 @@ class EffectManager(IpcFeedTarget):
             f"{effect.value * (-1 if effect.known_effect_type == EffectType.Damage else 1):>+7}",
             f"{pending_effect.action_id:>5}",
         ])
-        print(*d)
+        # print(*d)
         pass  # TODO
 
     def _on_effect_over_time(self, timestamp: datetime.datetime, target: Actor,
@@ -119,5 +119,5 @@ class EffectManager(IpcFeedTarget):
             d.append(f"{buff_id:>5}(*)")
         else:
             d.append("?")
-        print(*d)
+        # print(*d)
         pass  # TODO
