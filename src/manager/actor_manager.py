@@ -5,12 +5,12 @@ import weakref
 import math
 
 from manager.stubs import IpcFeedTarget
+from pyxivdata.installation.resource_reader import GameResourceReader
 from pyxivdata.network.client_ipc import IpcRequestMove, IpcRequestMoveInstance
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
 from pyxivdata.network.packet import IpcMessageHeader, PacketHeader
 from pyxivdata.network.server_ipc import *
-from pyxivdata.network.server_ipc.actor_control import ActorControlClassJobChange, ActorControlEffectOverTime, \
-    ActorControlAggro
+from pyxivdata.network.server_ipc.actor_control import ActorControlClassJobChange, ActorControlAggro
 from pyxivdata.network.server_ipc.common import StatusEffectEntryModificationInfo, StatusEffect
 from pyxivdata.network.server_ipc.opcodes import ServerIpcOpcodes
 
@@ -49,39 +49,45 @@ class Actor:
     outgoing_enmity_per_actor: typing.Dict[int, int] = dataclasses.field(default_factory=dict)
     aggroed: bool = False
 
+    def update_status_effect(self,
+                             timestamp: datetime.datetime, index: int,
+                             received_info: typing.Union[StatusEffect, StatusEffectEntryModificationInfo],
+                             reader: GameResourceReader):
+        while len(self.status_effects) <= index:
+            self.status_effects.append(ActorStatusEffect())
+        effect = self.status_effects[index]
+        effect.effect_id = received_info.effect_id
+        effect.param = received_info.param
+        if received_info.duration > 0:
+            effect.expiry = timestamp + datetime.timedelta(seconds=received_info.duration)
+        else:
+            effect.expiry = None
+        effect.source_actor_id = received_info.source_actor_id
+
+        if not effect.effect_id:
+            return
+
+        data_info = reader.get_status(received_info.effect_id)
+        # TODO: calc "critical hit rate", (conditional) "damage dealt", (conditional) "damage taken"
+        breakpoint()
+
     def update_status_effects_from_list(
             self,
             timestamp: datetime.datetime,
             effects: typing.Sequence[StatusEffect],
+            reader: GameResourceReader,
     ):
         for i, effect in enumerate(effects):
-            while len(self.status_effects) <= i:
-                self.status_effects.append(ActorStatusEffect())
-            t = self.status_effects[i]
-            t.effect_id = effect.effect_id
-            t.param = effect.param
-            if effect.duration > 0:
-                t.expiry = timestamp + datetime.timedelta(seconds=effect.duration)
-            else:
-                t.expiry = None
-            t.source_actor_id = effect.source_actor_id
+            self.update_status_effect(timestamp, i, effect, reader)
 
     def update_status_effects_from_modification_info(
             self,
             timestamp: datetime.datetime,
             updates: typing.Sequence[StatusEffectEntryModificationInfo],
+            reader: GameResourceReader,
     ):
         for effect in updates:
-            while len(self.status_effects) <= effect.index:
-                self.status_effects.append(ActorStatusEffect())
-            t = self.status_effects[effect.index]
-            t.effect_id = effect.effect_id
-            t.param = effect.param
-            if effect.duration > 0:
-                t.expiry = timestamp + datetime.timedelta(seconds=effect.duration)
-            else:
-                t.expiry = None
-            t.source_actor_id = effect.source_actor_id
+            self.update_status_effect(timestamp, effect.index, effect, reader)
 
     def distance(self, r: 'Actor') -> typing.Optional[float]:
         if self.x is None or r.x is None:
@@ -96,8 +102,9 @@ class Actor:
 class ActorManager(IpcFeedTarget):
     __actors: typing.Union[typing.Dict[int, Actor], weakref.WeakValueDictionary]
 
-    def __init__(self, server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes):
-        super().__init__(server_opcodes, client_opcodes)
+    def __init__(self, resource_reader: GameResourceReader,
+                 server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes):
+        super().__init__(resource_reader, server_opcodes, client_opcodes)
         self.__root_actor = Actor(id=0xE0000000, name="(root)")
         self.__actors = weakref.WeakValueDictionary({
             0xE0000000: self.__root_actor,
@@ -185,7 +192,8 @@ class ActorManager(IpcFeedTarget):
             actor.zone_id = self.__player.zone_id
             actor.hp = data.hp
             actor.mp = data.mp
-            actor.update_status_effects_from_list(bundle_header.timestamp, data.status_effects)
+            actor.update_status_effects_from_list(bundle_header.timestamp, data.status_effects,
+                                                  self._resource_reader)
             actor.x = data.position_vector.x
             actor.y = data.position_vector.y
             actor.z = data.position_vector.z
@@ -272,7 +280,8 @@ class ActorManager(IpcFeedTarget):
             actor.max_hp = data.max_hp
             actor.mp = data.mp
             actor.shield_ratio = data.shield_percentage / 100.
-            actor.update_status_effects_from_modification_info(bundle_header.timestamp, data.entries[:data.entry_count])
+            actor.update_status_effects_from_modification_info(bundle_header.timestamp, data.entries[:data.entry_count],
+                                                               self._resource_reader)
 
         @self._server_opcode_handler(server_opcodes.ActorStatusEffectList, server_opcodes.ActorStatusEffectList2,
                                      server_opcodes.ActorStatusEffectListBoss)
@@ -286,7 +295,8 @@ class ActorManager(IpcFeedTarget):
             actor.hp = data.hp
             actor.mp = data.mp
             actor.shield_ratio = data.shield_percentage / 100.
-            actor.update_status_effects_from_list(bundle_header.timestamp, data.effects)
+            actor.update_status_effects_from_list(bundle_header.timestamp, data.effects,
+                                                  self._resource_reader)
 
         @self._actor_control_handler
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: ActorControlClassJobChange):

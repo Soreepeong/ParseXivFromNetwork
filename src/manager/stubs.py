@@ -5,6 +5,7 @@ import typing
 
 import itertools
 
+from pyxivdata.installation.resource_reader import GameResourceReader
 from pyxivdata.network import server_ipc, client_ipc
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
 from pyxivdata.network.common import IpcStructure
@@ -51,7 +52,9 @@ class IpcFeedTarget:
     __actor_control_map: typing.Dict[int, typing.List[typing.Tuple[ActorControlCallbackType,
                                                                    typing.Type[ActorControlBase]]]]
 
-    def __init__(self, server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes):
+    def __init__(self, resource_reader: GameResourceReader,
+                 server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes):
+        self._resource_reader = resource_reader
         self.__opcodes = server_opcodes
         self.__client_type2_map = collections.defaultdict(list)
         self.__server_type2_map = collections.defaultdict(list)

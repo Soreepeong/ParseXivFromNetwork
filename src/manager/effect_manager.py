@@ -3,6 +3,7 @@ import datetime
 
 from manager.actor_manager import ActorManager, Actor
 from manager.stubs import IpcFeedTarget
+from pyxivdata.installation.resource_reader import GameResourceReader
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
 from pyxivdata.network.packet import PacketHeader, IpcMessageHeader
 from pyxivdata.network.server_ipc import *
@@ -20,8 +21,10 @@ class PendingEffect:
 
 
 class EffectManager(IpcFeedTarget):
-    def __init__(self, server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes, actor_manager: ActorManager):
-        super().__init__(server_opcodes, client_opcodes)
+    def __init__(self, resource_reader: GameResourceReader,
+                 server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes,
+                 actor_manager: ActorManager):
+        super().__init__(resource_reader, server_opcodes, client_opcodes)
         self._actors = actor_manager
         self._pending_effects: typing.Dict[int, PendingEffect] = {}
 
@@ -119,5 +122,5 @@ class EffectManager(IpcFeedTarget):
             d.append(f"{buff_id:>5}(*)")
         else:
             d.append("?")
-        # print(*d)
+        print(*d)
         pass  # TODO

@@ -17,12 +17,12 @@ from pyxivdata.network.server_ipc import ServerIpcOpcodes, IpcDirectorUpdate, Ip
 
 
 class Parser:
-    def __init__(self):
+    def __init__(self, reader: GameResourceReader):
         server_opcodes = ServerIpcOpcodes()
         client_opcodes = ClientIpcOpcodes()
-        self.actor_manager = ActorManager(server_opcodes, client_opcodes)
-        self.chat_manager = ChatManager(server_opcodes, client_opcodes, self.actor_manager)
-        self.effect_manager = EffectManager(server_opcodes, client_opcodes, self.actor_manager)
+        self.actor_manager = ActorManager(reader, server_opcodes, client_opcodes)
+        self.chat_manager = ChatManager(reader, server_opcodes, client_opcodes, self.actor_manager)
+        self.effect_manager = EffectManager(reader, server_opcodes, client_opcodes, self.actor_manager)
 
     def feed_from_server(self, packet_header: PacketHeader, message_data: bytearray):
         self.actor_manager.feed_from_server(packet_header, message_data)
@@ -42,9 +42,9 @@ def __main__():
 
     known_server_opcodes = [x.default for x in dataclasses.fields(ServerIpcOpcodes)]
 
-    parser = Parser()
     fp: typing.Union[io.BytesIO]
     with open(path, "rb") as fp, GameResourceReader(default_language=[GameLanguage.English]) as res:
+        parser = Parser(res)
         while True:
             hdr = fp.read(5)
             if not hdr:

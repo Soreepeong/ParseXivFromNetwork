@@ -3,6 +3,7 @@ import typing
 from manager.actor_manager import ActorManager
 from manager.stubs import IpcFeedTarget
 from pyxivdata.escaped_string import SqEscapedString
+from pyxivdata.installation.resource_reader import GameResourceReader
 from pyxivdata.network.client_ipc import IpcRequestChat, IpcRequestTell, IpcRequestChatParty
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
 from pyxivdata.network.enums import ChatType
@@ -12,8 +13,10 @@ from pyxivdata.network.server_ipc.opcodes import ServerIpcOpcodes
 
 
 class ChatManager(IpcFeedTarget):
-    def __init__(self, server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes, actor_manager: ActorManager):
-        super().__init__(server_opcodes, client_opcodes)
+    def __init__(self, resource_reader: GameResourceReader,
+                 server_opcodes: ServerIpcOpcodes, client_opcodes: ClientIpcOpcodes,
+                 actor_manager: ActorManager):
+        super().__init__(resource_reader, server_opcodes, client_opcodes)
         self.__actors = actor_manager
 
         @self._server_opcode_handler(server_opcodes.Chat)
