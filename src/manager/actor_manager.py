@@ -1,5 +1,6 @@
 import dataclasses
 import datetime
+import itertools
 import weakref
 
 import math
@@ -41,7 +42,7 @@ class Actor:
     name: typing.Optional[str] = None
     zone_id: typing.Optional[int] = None
     bnpcname_id: typing.Optional[int] = None
-    class_or_job: typing.Optional[int] = None
+    class_job: typing.Optional[int] = None
     level: typing.Optional[int] = None
     synced_level: typing.Optional[int] = None
     shield_ratio: typing.Optional[float] = None
@@ -69,7 +70,7 @@ class Actor:
 
         data_info = reader.get_status(received_info.effect_id)
         # TODO: calc "critical hit rate", (conditional) "damage dealt", (conditional) "damage taken"
-        breakpoint()
+        # breakpoint()
 
     def update_status_effects_from_list(
             self,
@@ -143,7 +144,7 @@ class ActorManager(IpcFeedTarget):
                     actor.mp = member.mp
                     actor.max_mp = member.max_mp
                     actor.zone_id = member.zone_id
-                    actor.class_or_job = member.class_or_job
+                    actor.class_job = member.class_job
                     actor.level = member.level
                     actor.name = member.name
                     self.__party.append(actor)
@@ -164,7 +165,7 @@ class ActorManager(IpcFeedTarget):
                     continue
                 self.__alliance.append(actor)
                 actor.last_updated_timestamp = bundle_header.timestamp
-                actor.class_or_job = member.class_or_job
+                actor.class_job = member.class_job
                 actor.hp = member.hp
                 actor.max_hp = member.max_hp
                 actor.name = member.name
@@ -186,7 +187,7 @@ class ActorManager(IpcFeedTarget):
             actor.owner_id = data.owner_id
             actor.bnpcname_id = data.bnpc_name
             actor.level = data.level
-            actor.class_or_job = data.class_or_job
+            actor.class_job = data.class_job
             actor.max_hp = data.max_hp
             actor.max_mp = data.max_mp
             actor.zone_id = self.__player.zone_id
@@ -244,7 +245,7 @@ class ActorManager(IpcFeedTarget):
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcActorModelEquip):
             actor = self[header.actor_id]
             actor.last_updated_timestamp = bundle_header.timestamp
-            actor.class_or_job = data.class_or_job
+            actor.class_job = data.class_job
             actor.level = data.level
 
         @self._server_opcode_handler(server_opcodes.PlayerParams)
@@ -289,7 +290,7 @@ class ActorManager(IpcFeedTarget):
             actor = self[header.actor_id]
             actor.last_updated_timestamp = bundle_header.timestamp
             actor.level = data.level
-            actor.class_or_job = data.class_or_job
+            actor.class_job = data.class_job
             actor.max_hp = data.max_hp
             actor.max_mp = data.max_mp
             actor.hp = data.hp
@@ -302,13 +303,13 @@ class ActorManager(IpcFeedTarget):
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: ActorControlClassJobChange):
             actor = self[header.actor_id]
             actor.last_updated_timestamp = bundle_header.timestamp
-            actor.class_or_job = data.class_or_job
+            actor.class_job = data.class_job
 
         @self._actor_control_handler
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: ActorControlClassJobChange):
             actor = self[header.actor_id]
             actor.last_updated_timestamp = bundle_header.timestamp
-            actor.class_or_job = data.class_or_job
+            actor.class_job = data.class_job
 
         @self._actor_control_handler
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: ActorControlAggro):
@@ -329,3 +330,8 @@ class ActorManager(IpcFeedTarget):
     @property
     def party_id(self):
         return self.__party_id
+
+    @property
+    def in_battle(self) -> bool:
+        return any(member and member.aggroed
+                   for member in itertools.chain(self.__party, (self.__player,), self.__alliance))

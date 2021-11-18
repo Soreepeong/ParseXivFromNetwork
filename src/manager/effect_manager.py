@@ -27,6 +27,7 @@ class EffectManager(IpcFeedTarget):
         super().__init__(resource_reader, server_opcodes, client_opcodes)
         self._actors = actor_manager
         self._pending_effects: typing.Dict[int, PendingEffect] = {}
+        self._battles = []
 
         @self._server_opcode_handler(server_opcodes.Effect01, server_opcodes.Effect08, server_opcodes.Effect16,
                                      server_opcodes.Effect24, server_opcodes.Effect32)
@@ -122,5 +123,5 @@ class EffectManager(IpcFeedTarget):
             d.append(f"{buff_id:>5}(*)")
         else:
             d.append("?")
-        print(*d)
+        # print(*d)
         pass  # TODO

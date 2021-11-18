@@ -57,9 +57,10 @@ class ChatManager(IpcFeedTarget):
     def _on_chat(self, chat_type: ChatType, from_id: typing.Optional[int], from_name: str, from_world: int,
                  message: SeString,
                  to_name: typing.Optional[str] = None, to_world: typing.Optional[int] = None):
+        message.set_sheet_reader(self._resource_reader.excels.__getitem__)
         if chat_type == ChatType.Tell:
-            print(f"{from_name}@{from_world} >> {message}")
+            print(f"{from_name}@{self._resource_reader.get_world_name(from_world)} >> {repr(message)}")
         elif chat_type == ChatType.TellReceive:
-            print(f">> {to_name}@{to_world}: {message}")
+            print(f">> {to_name}@{self._resource_reader.get_world_name(to_world)}: {repr(message)}")
         else:
-            print(f"[{chat_type.name}] {from_name}@{from_world}: {message}")
+            print(f"[{chat_type.name}] {from_name}@{self._resource_reader.get_world_name(from_world)}: {repr(message)}")
