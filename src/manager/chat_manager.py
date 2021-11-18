@@ -2,7 +2,7 @@ import typing
 
 from manager.actor_manager import ActorManager
 from manager.stubs import IpcFeedTarget
-from pyxivdata.escaped_string import SqEscapedString
+from pyxivdata.escaped_string import SeString
 from pyxivdata.installation.resource_reader import GameResourceReader
 from pyxivdata.network.client_ipc import IpcRequestChat, IpcRequestTell, IpcRequestChatParty
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
@@ -55,7 +55,7 @@ class ChatManager(IpcFeedTarget):
                           data.world_id)
 
     def _on_chat(self, chat_type: ChatType, from_id: typing.Optional[int], from_name: str, from_world: int,
-                 message: SqEscapedString,
+                 message: SeString,
                  to_name: typing.Optional[str] = None, to_world: typing.Optional[int] = None):
         if chat_type == ChatType.Tell:
             print(f"{from_name}@{from_world} >> {message}")
