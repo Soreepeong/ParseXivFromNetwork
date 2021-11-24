@@ -36,8 +36,8 @@ class Parser:
 
 
 def __main__():
-    # path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211025\204.2.229.113.55027.log"
-    path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211026\204.2.229.113.55027.log"
+    path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211025\204.2.229.113.55027.log"
+    # path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211026\204.2.229.113.55027.log"
     # path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211026\124.150.157.26.55007.log"
 
     known_server_opcodes = [x.default for x in dataclasses.fields(ServerIpcOpcodes)]
@@ -72,7 +72,7 @@ def __main__():
 
                         if ipc_header.type2 == ServerIpcOpcodes.PlaceWaymark:
                             r = IpcPlaceWaymark.from_buffer(ipc_data)
-                            breakpoint()
+                            # breakpoint()
                         elif ipc_header.type2 == ServerIpcOpcodes.PlacePresetWaymark:
                             r = IpcPlacePresetWaymark.from_buffer(ipc_data)
                         elif ipc_header.type2 == ServerIpcOpcodes.DirectorUpdate:

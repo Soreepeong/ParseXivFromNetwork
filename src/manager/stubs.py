@@ -83,24 +83,23 @@ class IpcFeedTarget:
                 cb(bundle_header, header, data_type(data))
 
     def feed_from_server(self, bundle_header: PacketHeader, data: bytearray):
+        # if bundle_header.timestamp.hour == 12 \
+        #         and bundle_header.timestamp.minute == 47:
+        #     if b'\xca\x1b' in data:
+        #         breakpoint()
         return _feed(bundle_header, data, self.__server_type2_map)
 
     def feed_from_client(self, bundle_header: PacketHeader, data: bytearray):
         return _feed(bundle_header, data, self.__client_type2_map)
 
     def _opcode_handler(self, direction: bool, *opcodes: int):
-        type_ = type
-
         def wrapper(cb: IpcCallbackType):
-            nonlocal type_
-            if type_ is None:
-                type_ = list(inspect.signature(cb).parameters.values())[2]
             if opcodes:
                 for opcode in opcodes:
                     if direction:
-                        self.__server_type2_map[opcode].append((cb, self.__server_opcode_type_map[opcode]))
+                        self.__server_type2_map[opcode].append((cb, self.__server_opcode_type_map.get(opcode, None)))
                     else:
-                        self.__client_type2_map[opcode].append((cb, self.__client_opcode_type_map[opcode]))
+                        self.__client_type2_map[opcode].append((cb, self.__client_opcode_type_map.get(opcode, None)))
             else:
                 if direction:
                     self.__server_type2_map[None].append((cb, None))

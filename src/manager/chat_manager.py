@@ -1,3 +1,4 @@
+import ctypes
 import typing
 
 from manager.actor_manager import ActorManager
@@ -8,7 +9,7 @@ from pyxivdata.network.client_ipc import IpcRequestChat, IpcRequestTell, IpcRequ
 from pyxivdata.network.client_ipc.opcodes import ClientIpcOpcodes
 from pyxivdata.network.enums import ChatType
 from pyxivdata.network.packet import PacketHeader, IpcMessageHeader
-from pyxivdata.network.server_ipc import IpcChat, IpcChatParty, IpcChatTell
+from pyxivdata.network.server_ipc import IpcChat, IpcChatParty, IpcChatTell, IpcNpcYell, IpcContentTextData
 from pyxivdata.network.server_ipc.opcodes import ServerIpcOpcodes
 
 
@@ -18,6 +19,37 @@ class ChatManager(IpcFeedTarget):
                  actor_manager: ActorManager):
         super().__init__(resource_reader, server_opcodes, client_opcodes)
         self.__actors = actor_manager
+
+        @self._server_opcode_handler(server_opcodes.NpcYell)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcNpcYell):
+            for fn in ("BNpcName", "ENpcResident"):  # TODO: how to distinguish?
+                try:
+                    bnpcname = resource_reader.get_excel_string(fn, data.name_id, 0)
+                    break
+                except KeyError:
+                    pass
+            else:
+                bnpcname = "?"
+                fn = "?"
+            txt = resource_reader.get_excel_string("NpcYell", data.row_id, 10)
+            actor = self.__actors[data.actor_id]
+            print(f"[NpcYell] {actor}({fn}:{data.name_id}){bnpcname}: {data.row_id}={txt}")
+
+        @self._server_opcode_handler(server_opcodes.ContentTextData)
+        def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcContentTextData):
+            bnpcname = resource_reader.get_bnpc_name(data.bnpcname_id)
+            for fn in ("PublicContentTextData", "InstanceContentTextData"):  # TODO: how to distinguish?
+                try:
+                    txt = resource_reader.get_excel_string(fn, data.row_id, 0)
+                    break
+                except KeyError:
+                    pass
+            else:
+                txt = "?"
+                fn = "?"
+            actor = self.__actors[data.actor_id]
+            print(f"[ContentTextData] someobjid={data.some_object_id:08x} "
+                  f"{actor}({data.bnpcname_id}={bnpcname}): {fn}:{data.row_id}={txt} ({data.duration_ms}ms)")
 
         @self._server_opcode_handler(server_opcodes.Chat)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcChat):
@@ -61,6 +93,6 @@ class ChatManager(IpcFeedTarget):
         if chat_type == ChatType.Tell:
             print(f"{from_name}@{self._resource_reader.get_world_name(from_world)} >> {repr(message)}")
         elif chat_type == ChatType.TellReceive:
-            print(f">> {to_name}@{self._resource_reader.get_world_name(to_world)}: {repr(message)}")
+            print(f">> {from_name}@{self._resource_reader.get_world_name(from_world)}: {repr(message)}")
         else:
             print(f"[{chat_type.name}] {from_name}@{self._resource_reader.get_world_name(from_world)}: {repr(message)}")
