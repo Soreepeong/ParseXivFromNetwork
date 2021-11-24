@@ -33,7 +33,7 @@ class ChatManager(IpcFeedTarget):
                 fn = "?"
             txt = resource_reader.get_excel_string("NpcYell", data.row_id, 10)
             actor = self.__actors[data.actor_id]
-            print(f"[NpcYell] {actor}({fn}:{data.name_id}){bnpcname}: {data.row_id}={txt}")
+            print(f"[NpcYell] {actor}({fn}:{data.name_id}={bnpcname}): {data.row_id}={txt}")
 
         @self._server_opcode_handler(server_opcodes.ContentTextData)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcContentTextData):
