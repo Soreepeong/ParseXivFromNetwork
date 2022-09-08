@@ -33,7 +33,7 @@ class ChatManager(IpcFeedTarget):
                 fn = "?"
             txt = resource_reader.get_excel_string("NpcYell", data.row_id, 10)
             actor = self.__actors[data.actor_id]
-            print(f"[NpcYell] {actor}({fn}:{data.name_id}={bnpcname}): {data.row_id}={txt}")
+            print(f"[NpcYell] {actor.format(self._resource_reader)}({fn}:{data.name_id}={bnpcname}): {data.row_id}={txt.xml_repr}")
 
         @self._server_opcode_handler(server_opcodes.ContentTextData)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcContentTextData):
@@ -49,7 +49,7 @@ class ChatManager(IpcFeedTarget):
                 fn = "?"
             actor = self.__actors[data.actor_id]
             print(f"[ContentTextData] someobjid={data.some_object_id:08x} "
-                  f"{actor}({data.bnpcname_id}={bnpcname}): {fn}:{data.row_id}={txt} ({data.duration_ms}ms)")
+                  f"{actor.format(self._resource_reader)}({data.bnpcname_id}={bnpcname}): {fn}:{data.row_id}={txt.xml_repr} ({data.duration_ms}ms)")
 
         @self._server_opcode_handler(server_opcodes.Chat)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcChat):
@@ -90,6 +90,7 @@ class ChatManager(IpcFeedTarget):
                  message: SeString,
                  to_name: typing.Optional[str] = None, to_world: typing.Optional[int] = None):
         message.set_sheet_reader(self._resource_reader.excels.__getitem__)
+        from_name = ".".join([x[0:1] for x in from_name.split(" ")]) + "."
         if chat_type == ChatType.Tell:
             print(f"{from_name}@{self._resource_reader.get_world_name(from_world)} >> {repr(message)}")
         elif chat_type == ChatType.TellReceive:

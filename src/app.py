@@ -1,7 +1,9 @@
 import ctypes
 import dataclasses
 import io
+import os
 import struct
+import sys
 import typing
 
 import zlib
@@ -36,8 +38,10 @@ class Parser:
 
 
 def __main__():
-    path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211025\204.2.229.113.55027.log"
-    # path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211026\204.2.229.113.55027.log"
+    os.system("chcp 65001")
+    sys.stdout.reconfigure(encoding="utf-8")
+    # path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211025\204.2.229.113.55027.log"
+    path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211026\204.2.229.113.55027.log"
     # path = r"D:\OneDrive\Misc\xivcapture\Network_22106_20211026\124.150.157.26.55007.log"
 
     known_server_opcodes = [x.default for x in dataclasses.fields(ServerIpcOpcodes)]

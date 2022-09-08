@@ -98,6 +98,32 @@ class Actor:
     def __str__(self):
         return f"{self.name or '?'}({self.id:08x}) @{self.spawn_id}"
 
+    def format(self, reader: GameResourceReader, owner: typing.Optional['Actor'] = None):
+        if self.id == 0xE0000000:
+            return "(root)"
+
+        r = []
+        if self.name is None:
+            r.append(f"~{self.id:08x}")
+        else:
+            if self.home_world_id == 0:  # crossworld
+                r.append(self.name)
+            else:
+                r.append(".".join([x[0:1] for x in self.name.split(" ")]) + ".")
+            # r.append(self.name)
+
+        if self.home_world_id is None:
+            r.append("@?")
+        else:
+            if self.home_world_id != 0:  # crossworld
+                world = str(reader.get_world_name(self.home_world_id))
+                r.append(f"@{world}")
+
+        if owner is not None and owner.id != 0xE0000000:
+            r.append(f"(of {owner.format(reader)})")
+
+        return "".join(r)
+
 
 # noinspection DuplicatedCode
 class ActorManager(IpcFeedTarget):
@@ -134,7 +160,7 @@ class ActorManager(IpcFeedTarget):
             self.__party_id = data.party_id
             for member in data.members[:data.party_size]:
                 if member.character_id == 0:
-                    self.__party.append(member.name)
+                    self.__party.append(None)
                 else:
                     actor = self[member.character_id]
                     actor.last_updated_timestamp = bundle_header.timestamp
@@ -149,11 +175,14 @@ class ActorManager(IpcFeedTarget):
                     actor.name = member.name
                     self.__party.append(actor)
 
+            print("Party: ", ",".join("-" if p is None else p.format(self._resource_reader) for p in self.__party))
+
         @self._server_opcode_handler(server_opcodes.PartyModify)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcPartyModify):
             if data.party_size <= 1:
                 self.__party.clear()
                 self.__party_id = None
+                print("Party: -")
 
         @self._server_opcode_handler(server_opcodes.AllianceList)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcAllianceList):
@@ -170,7 +199,8 @@ class ActorManager(IpcFeedTarget):
                 actor.max_hp = member.max_hp
                 actor.name = member.name
                 actor.home_world_id = member.home_world_id
-            pass
+
+            print("Alliance: ", ",".join("-" if p is None else p.format(self._resource_reader) for p in self.__alliance))
 
         @self._server_opcode_handler(server_opcodes.ActorSpawn, server_opcodes.ActorSpawnNpc,
                                      server_opcodes.ActorSpawnNpc2)
@@ -227,7 +257,7 @@ class ActorManager(IpcFeedTarget):
             if actor is not spawn:
                 breakpoint()
             del self.__spawns[spawn.spawn_id]
-            # print(f"Despawn: {actor.name}")
+            print(f"Despawn: {actor.format(self._resource_reader)}")
             pass  # TODO
 
         @self._server_opcode_handler(server_opcodes.ActorSetPos, server_opcodes.ActorMove)
@@ -272,6 +302,7 @@ class ActorManager(IpcFeedTarget):
             actor.x = data.position_vector.x
             actor.y = data.position_vector.y
             actor.z = data.position_vector.z
+            print(f"Zone: {self._resource_reader.get_territory_name(data.zone_id)}")
 
         @self._server_opcode_handler(server_opcodes.EffectResult)
         def _(bundle_header: PacketHeader, header: IpcMessageHeader, data: IpcEffectResult):

@@ -78,23 +78,13 @@ class EffectManager(IpcFeedTarget):
 
         d = [
             f"{timestamp:%Y-%m-%d %H:%M:%S.%f}",
-            f"{source.name or source.id}",
-        ]
-        if source.owner_id != 0xE0000000:
-            d.append(f"@{self._actors[source.owner_id].name or source.owner_id}")
-
-        d.extend([
-            "=>",
-            f"{target.name or target.id}",
-        ])
-        if target.owner_id != 0xE0000000:
-            d.append(f"@{self._actors[target.owner_id].name or target.owner_id}")
-
-        d.extend([
+            f"{source.format(self._resource_reader, self._actors[source.owner_id])}",
+            f"=> {target.format(self._resource_reader, self._actors[target.owner_id])}",
             f"{effect.value * (-1 if effect.known_effect_type == EffectType.Damage else 1):>+7}",
-            f"{pending_effect.action_id:>5}",
-        ])
-        # print(*d)
+            f"{self._resource_reader.get_action_name(pending_effect.action_id, fallback_format='?')}({pending_effect.action_id})",
+            f"=> {target.hp:,}/{target.max_hp:,} ({100 * target.hp / target.max_hp:.02f}%)"
+        ]
+        print(*d)
         pass  # TODO
 
     def _on_effect_over_time(self, timestamp: datetime.datetime, target: Actor,
@@ -104,24 +94,11 @@ class EffectManager(IpcFeedTarget):
 
         d = [
             f"{timestamp:%Y-%m-%d %H:%M:%S.%f}",
+            f"{'?' if source is None else source.format(self._resource_reader, None if source.owner_id is None else self._actors[source.owner_id])}",
+            f"=> {target.format(self._resource_reader, self._actors[target.owner_id])}",
+            f"{amount * (-1 if effect_type == EffectType.Damage else 1):>+7}",
+            f"{self._resource_reader.get_status_effect_name(buff_id, fallback_format='?')}({buff_id}, *)" if buff_id else "?(*)",
+            f"=> {target.hp:,}/{target.max_hp:,} ({100 * target.hp / target.max_hp:.02f}%)"
         ]
-
-        if source is not None:
-            d.append(f"{source.name or source.id}")
-            if source.owner_id != 0xE0000000:
-                d.append(f"@{self._actors[source.owner_id].name or source.owner_id}")
-
-        d.extend([
-            "=>",
-            f"{target.name or target.id}",
-        ])
-        if target.owner_id != 0xE0000000:
-            d.append(f"@{self._actors[target.owner_id].name or target.owner_id}")
-
-        d.append(f"{amount * (-1 if effect_type == EffectType.Damage else 1):>+7}")
-        if buff_id:
-            d.append(f"{buff_id:>5}(*)")
-        else:
-            d.append("?")
-        # print(*d)
+        print(*d)
         pass  # TODO
